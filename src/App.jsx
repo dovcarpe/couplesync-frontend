@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const API = "http://localhost:3001/api";
-const WS_URL = "ws://localhost:3001";
+const API = "https://couplesync-backend-production.up.railway.app";
+const WS_URL = "wss://couplesync-backend-production.up.railway.app";
 
 // ─── API Helper ───────────────────────────────────────────────────────────────
 async function api(path, method = "GET", body = null, token = null) {
