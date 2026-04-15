@@ -6,8 +6,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/ws': { target: 'ws://localhost:3001', ws: true }
+      '/api': 'http://couplesync-backend-production.up.railway.app',
+      '/ws': { target: 'wss://couplesync-backend-production.up.railway.app', ws: true }
     }
   }
 })
