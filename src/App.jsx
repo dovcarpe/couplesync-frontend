@@ -793,10 +793,15 @@ function Toast({ message, onDone }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  // Safely parse a localStorage value — handles "undefined", null, and malformed JSON
+  function safeParseJSON(val) {
+    try { return JSON.parse(val); } catch { return null; }
+  }
+
   const [auth, setAuth] = useState(() => {
     const token = localStorage.getItem("token");
-    const user = JSON.parse(localStorage.getItem("user") || "null");
-    const partner = JSON.parse(localStorage.getItem("partner") || "null");
+    const user = safeParseJSON(localStorage.getItem("user"));
+    const partner = safeParseJSON(localStorage.getItem("partner"));
     return { token, user, partner };
   });
   const [page, setPage] = useState("dashboard");
@@ -849,15 +854,15 @@ export default function App() {
 
   function handleLogin(data) {
     localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-    localStorage.setItem("partner", JSON.stringify(data.partner));
+    localStorage.setItem("user", JSON.stringify(data.user ?? null));
+    localStorage.setItem("partner", JSON.stringify(data.partner ?? null));
     setAuth({ token: data.token, user: data.user, partner: data.partner });
   }
 
   function handlePaired(data) {
     const updatedUser = { ...auth.user, coupleId: data.couple.id };
-    localStorage.setItem("user", JSON.stringify(updatedUser));
-    localStorage.setItem("partner", JSON.stringify(data.partner));
+    localStorage.setItem("user", JSON.stringify(updatedUser ?? null));
+    localStorage.setItem("partner", JSON.stringify(data.partner ?? null));
     setAuth(prev => ({ ...prev, user: updatedUser, partner: data.partner }));
   }
 
