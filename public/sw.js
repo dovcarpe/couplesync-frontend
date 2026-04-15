@@ -25,6 +25,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   if (e.request.url.includes('/api/')) return; // never cache API calls
+    const url = new URL(e.request.url);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return; // skip chrome-extension:// etc.
 
   e.respondWith(
     fetch(e.request)
