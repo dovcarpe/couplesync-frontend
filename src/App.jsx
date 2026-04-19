@@ -484,7 +484,7 @@ function GoalsPage({ token, wsEvents }) {
             <div className="goal-header">
               <div>
                 <strong>{g.title}</strong>
-                <span className={`type-badge type-${g.type}`}>{g.type.replace("-", " ")}</span>
+                <span className={`type-badge type-${g.type}`}>{(g.type || "general").replace("-", " ")}</span>
               </div>
               <button className="icon-btn" onClick={() => deleteGoal(g.id)}>{icons.trash}</button>
             </div>
@@ -752,6 +752,117 @@ function MotivationPage({ token, partner }) {
 // ─── Push Notification Helpers ────────────────────────────────────────────────
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 
+// —— Settings Page ——————————————————————————————————————————
+function SettingsPage({ token, user, partner, onLogout }) {
+  const [profile, setProfile] = React.useState({
+    name: user?.name || "",
+    email: user?.email || "",
+    loveLanguage: user?.loveLanguage || "words-of-affirmation",
+  });
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const [notifEnabled, setNotifEnabled] = React.useState(
+    "Notification" in window && Notification.permission === "granted"
+  );
+
+  const loveLanguages = [
+    { value: "words-of-affirmation", label: "Words of Affirmation" },
+    { value: "acts-of-service", label: "Acts of Service" },
+    { value: "receiving-gifts", label: "Receiving Gifts" },
+    { value: "quality-time", label: "Quality Time" },
+    { value: "physical-touch", label: "Physical Touch" },
+  ];
+
+  async function saveProfile() {
+    setSaving(true);
+    try {
+      await api("/profile", "PUT", profile, token);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error("Save profile error:", e);
+    }
+    setSaving(false);
+  }
+
+  async function requestNotifications() {
+    if (!("Notification" in window)) return alert("Notifications not supported on this device.");
+    const perm = await Notification.requestPermission();
+    setNotifEnabled(perm === "granted");
+  }
+
+  return (
+    <div className="page">
+      <h2>⚙️ Settings</h2>
+
+      <div className="card">
+        <h3>👤 Your Profile</h3>
+        <div className="form-group">
+          <label>Name</label>
+          <input
+            className="input"
+            value={profile.name}
+            onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+          />
+        </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input
+            className="input"
+            type="email"
+            value={profile.email}
+            readOnly
+          />
+        </div>
+        <div className="form-group">
+          <label>Love Language</label>
+          <select
+            className="input"
+            value={profile.loveLanguage}
+            onChange={e => setProfile(p => ({ ...p, loveLanguage: e.target.value }))}
+          >
+            {loveLanguages.map(l => (
+              <option key={l.value} value={l.value}>{l.label}</option>
+            ))}
+          </select>
+        </div>
+        <button className="btn-primary" onClick={saveProfile} disabled={saving}>
+          {saving ? "Saving…" : saved ? "✅ Saved!" : "Save Changes"}
+        </button>
+      </div>
+
+      {partner && (
+        <div className="card">
+          <h3>💑 Partner</h3>
+          <p><strong>{partner.name}</strong></p>
+          <p style={{ color: "#888", fontSize: "0.9rem" }}>{partner.email}</p>
+          <p>Love language: <em>{partner.loveLanguage?.replace("-", " ") || "not set"}</em></p>
+        </div>
+      )}
+
+      <div className="card">
+        <h3>🔔 Notifications</h3>
+        {notifEnabled ? (
+          <p style={{ color: "#4caf50" }}>✅ Push notifications are enabled</p>
+        ) : (
+          <>
+            <p>Enable push notifications to get reminders for tasks, goals, and messages from your partner.</p>
+            <button className="btn-primary" onClick={requestNotifications}>Enable Notifications</button>
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>🚪 Account</h3>
+        <p style={{ color: "#888", fontSize: "0.9rem" }}>Signed in as {user?.email}</p>
+        <button className="btn-danger" style={{ marginTop: "0.5rem", background: "#e53935", color: "white", border: "none", borderRadius: "8px", padding: "0.5rem 1.2rem", cursor: "pointer" }} onClick={onLogout}>
+          Log Out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -895,6 +1006,7 @@ export default function App() {
     { id: "messages", label: "Messages", icon: "💬" },
     { id: "motivation", label: "Motivation", icon: "💡" },
     { id: "budget", label: "Budget", icon: "💰" },
+    { id: "settings", label: "Settings", icon: "⚙️" },
   ];
 
   return (
@@ -937,6 +1049,7 @@ export default function App() {
         {page === "messages" && <MessagesPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
         {page === "motivation" && <MotivationPage token={auth.token} partner={auth.partner} />}
         {page === "budget" && <BudgetPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
+        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} />}
       </main>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
