@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const API = "https://couplesync-backend-production.up.railway.app/api";
 const WS_URL = "wss://couplesync-backend-production.up.railway.app/api";
