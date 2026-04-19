@@ -212,6 +212,8 @@ function Dashboard({ user, partner, token, streak }) {
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 function CalendarPage({ token, user, wsEvents }) {
   const [events, setEvents] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
   const [form, setForm] = React.useState({ title: '', date: '', description: '', type: 'event' });
   const [showForm, setShowForm] = React.useState(false);
   const [showDateNightPicker, setShowDateNightPicker] = React.useState(false);
@@ -234,8 +236,11 @@ function CalendarPage({ token, user, wsEvents }) {
   ];
 
   React.useEffect(() => {
-    api('/events', 'GET', null, token).then(setEvents).catch(console.error);
-    // Check if Google Calendar is connected
+    if (!token) return;
+    setLoading(true);
+    api('/events', 'GET', null, token)
+      .then(data => { setEvents(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(e => { console.error('Calendar load error:', e); setError('Could not load events.'); setLoading(false); });
     api('/calendar/status', 'GET', null, token)
       .then(d => setGcConnected(!!d?.connected))
       .catch(() => {});
@@ -282,7 +287,8 @@ function CalendarPage({ token, user, wsEvents }) {
     try {
       const d = await api('/calendar/auth-url', 'GET', null, token);
       if (d?.url) window.open(d.url, '_blank');
-    } catch (e) { alert('Google Calendar connection coming soon! Add your Google Client ID to the backend.'); }
+      else alert('Google Calendar: Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your Railway environment variables first.');
+    } catch (e) { alert('Google Calendar not configured yet. Add your Google API keys to Railway.'); }
   }
 
   async function syncGoogleCalendar() {
@@ -297,28 +303,34 @@ function CalendarPage({ token, user, wsEvents }) {
     setGcSyncing(false);
   }
 
-  const sorted = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
   const today = new Date().toISOString().split('T')[0];
+  const sorted = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const upcoming = sorted.filter(e => !e.date || e.date >= today);
+  const past = sorted.filter(e => e.date && e.date < today);
+
+  if (loading) return <div className="page"><h2>📅 Calendar</h2><p style={{color:'#aaa',textAlign:'center',padding:'2rem'}}>Loading events…</p></div>;
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0 }}>📅 Calendar</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button className="btn-primary" onClick={() => { setShowDateNightPicker(true); setShowForm(false); }}
-            style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)', fontSize: '0.9rem' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.5rem', marginBottom:'1rem' }}>
+        <h2 style={{ margin:0 }}>📅 Calendar</h2>
+        <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+          <button className="btn-primary" onClick={() => { setShowDateNightPicker(v => !v); setShowForm(false); }}
+            style={{ background:'linear-gradient(135deg,#e91e63,#ff5722)', fontSize:'0.9rem' }}>
             💕 Date Night
           </button>
           <button className="btn-primary" onClick={() => { setShowForm(v => !v); setShowDateNightPicker(false); }}
-            style={{ fontSize: '0.9rem' }}>
+            style={{ fontSize:'0.9rem' }}>
             + Add Event
           </button>
         </div>
       </div>
 
+      {error && <p style={{ color:'#f44336', marginBottom:'1rem' }}>{error}</p>}
+
       {showDateNightPicker && (
-        <div className="card" style={{ border: '1px solid rgba(233,30,99,0.4)', marginBottom: '1rem' }}>
-          <h3 style={{ color: '#e91e63', marginTop: 0 }}>💕 Plan a Date Night</h3>
+        <div className="card" style={{ border:'1px solid rgba(233,30,99,0.4)', marginBottom:'1rem' }}>
+          <h3 style={{ color:'#e91e63', marginTop:0 }}>💕 Plan a Date Night</h3>
           <div className="form-group">
             <label>Date</label>
             <input className="input" type="date" value={dateNightDate}
@@ -326,12 +338,12 @@ function CalendarPage({ token, user, wsEvents }) {
           </div>
           <div className="form-group">
             <label>Pick an idea (optional)</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', marginBottom:'0.5rem' }}>
               {dateNightIdeas.map((idea, i) => (
-                <button key={i} onClick={() => setDateNightIdea(idea)}
+                <button key={i} onClick={() => setDateNightIdea(prev => prev === idea ? '' : idea)}
                   style={{ background: dateNightIdea === idea ? 'linear-gradient(135deg,#e91e63,#ff5722)' : 'rgba(255,255,255,0.1)',
-                    color: 'white', border: 'none', borderRadius: '20px', padding: '0.3rem 0.7rem',
-                    cursor: 'pointer', fontSize: '0.82rem' }}>
+                    color:'white', border:'none', borderRadius:'20px', padding:'0.3rem 0.7rem',
+                    cursor:'pointer', fontSize:'0.82rem' }}>
                   {idea}
                 </button>
               ))}
@@ -339,13 +351,13 @@ function CalendarPage({ token, user, wsEvents }) {
             <input className="input" placeholder="Or type your own idea…" value={dateNightIdea}
               onChange={e => setDateNightIdea(e.target.value)} />
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display:'flex', gap:'0.5rem' }}>
             <button className="btn-primary" onClick={proposeDateNight} disabled={!dateNightDate}
-              style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)' }}>
+              style={{ background:'linear-gradient(135deg,#e91e63,#ff5722)' }}>
               💕 Add to Calendar
             </button>
             <button onClick={() => setShowDateNightPicker(false)}
-              style={{ background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', padding: '0.4rem 0.9rem', cursor: 'pointer' }}>
+              style={{ background:'transparent', color:'#aaa', border:'1px solid #555', borderRadius:'8px', padding:'0.4rem 0.9rem', cursor:'pointer' }}>
               Cancel
             </button>
           </div>
@@ -353,8 +365,8 @@ function CalendarPage({ token, user, wsEvents }) {
       )}
 
       {showForm && (
-        <div className="card" style={{ marginBottom: '1rem' }}>
-          <h3 style={{ marginTop: 0 }}>New Event</h3>
+        <div className="card" style={{ marginBottom:'1rem' }}>
+          <h3 style={{ marginTop:0 }}>New Event</h3>
           <div className="form-group">
             <label>Title</label>
             <input className="input" placeholder="Event title" value={form.title}
@@ -370,183 +382,252 @@ function CalendarPage({ token, user, wsEvents }) {
             <input className="input" placeholder="Any details…" value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button className="btn-primary" onClick={addEvent}>Add Event</button>
+          <div style={{ display:'flex', gap:'0.5rem' }}>
+            <button className="btn-primary" onClick={addEvent} disabled={!form.title || !form.date}>Add Event</button>
             <button onClick={() => setShowForm(false)}
-              style={{ background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', padding: '0.4rem 0.9rem', cursor: 'pointer' }}>
+              style={{ background:'transparent', color:'#aaa', border:'1px solid #555', borderRadius:'8px', padding:'0.4rem 0.9rem', cursor:'pointer' }}>
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>🗓️ Google Calendar</h3>
+      <div className="card" style={{ marginBottom:'1rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <h3 style={{ margin:0 }}>🗓️ Google Calendar</h3>
           {gcConnected ? (
             <button className="btn-primary" onClick={syncGoogleCalendar} disabled={gcSyncing}
-              style={{ fontSize: '0.85rem', padding: '0.3rem 0.7rem' }}>
+              style={{ fontSize:'0.85rem', padding:'0.3rem 0.7rem' }}>
               {gcSyncing ? 'Syncing…' : '🔄 Sync Now'}
             </button>
           ) : (
             <button onClick={connectGoogleCalendar}
-              style={{ background: 'white', color: '#444', border: 'none', borderRadius: '8px',
-                padding: '0.35rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
+              style={{ background:'white', color:'#444', border:'none', borderRadius:'8px',
+                padding:'0.35rem 0.8rem', cursor:'pointer', fontSize:'0.85rem', fontWeight:600 }}>
               🔗 Connect Google
             </button>
           )}
         </div>
-        <p style={{ color: '#888', fontSize: '0.85rem', margin: '0.4rem 0 0' }}>
-          {gcConnected ? 'Your Google Calendar is connected. Events sync both ways.' : 'Connect to sync your Google Calendar events here.'}
+        <p style={{ color:'#888', fontSize:'0.85rem', margin:'0.4rem 0 0' }}>
+          {gcConnected ? 'Google Calendar connected — events sync both ways.' : 'Connect to sync with your Google Calendar.'}
         </p>
       </div>
 
-      <div>
-        {sorted.length === 0 && (
-          <p style={{ color: '#888', textAlign: 'center', padding: '2rem' }}>No events yet. Add one above!</p>
-        )}
-        {sorted.map(e => {
-          const isDateNight = e.type === 'date_night';
-          const isPast = e.date && e.date < today;
-          return (
-            <div key={e.id} className="card" style={{
-              marginBottom: '0.6rem', opacity: isPast ? 0.6 : 1,
-              border: isDateNight ? '1px solid rgba(233,30,99,0.4)' : 'none',
-              background: isDateNight ? 'linear-gradient(135deg,rgba(233,30,99,0.08),rgba(255,87,34,0.08))' : undefined,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      {events.length === 0 && (
+        <div className="card" style={{ textAlign:'center', padding:'2rem', color:'#888' }}>
+          <p>No events yet.</p>
+          <p style={{ fontSize:'0.9rem' }}>Tap <strong>+ Add Event</strong> or <strong>💕 Date Night</strong> to get started!</p>
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div>
+          <h3 style={{ color:'#aaa', fontSize:'0.85rem', marginBottom:'0.5rem', textTransform:'uppercase', letterSpacing:'0.05em' }}>Upcoming</h3>
+          {upcoming.map(e => {
+            const isDateNight = e.type === 'date_night';
+            return (
+              <div key={e.id} className="card" style={{
+                marginBottom:'0.6rem',
+                border: isDateNight ? '1px solid rgba(233,30,99,0.4)' : 'none',
+                background: isDateNight ? 'linear-gradient(135deg,rgba(233,30,99,0.08),rgba(255,87,34,0.08))' : undefined,
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight:600 }}>{isDateNight ? '💕 ' : ''}{e.title}</div>
+                    <div style={{ color:'#aaa', fontSize:'0.85rem', marginTop:'0.2rem' }}>
+                      {e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : ''}
+                      {e.description ? ' · ' + e.description : ''}
+                    </div>
+                  </div>
+                  <button onClick={() => deleteEvent(e.id)}
+                    style={{ background:'transparent', border:'none', color:'#888', cursor:'pointer', fontSize:'1.1rem', flexShrink:0 }}>
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div style={{ marginTop:'1rem', opacity:0.55 }}>
+          <h3 style={{ color:'#aaa', fontSize:'0.85rem', marginBottom:'0.5rem', textTransform:'uppercase', letterSpacing:'0.05em' }}>Past</h3>
+          {past.map(e => (
+            <div key={e.id} className="card" style={{ marginBottom:'0.5rem' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{isDateNight ? '💕 ' : ''}{e.title}</div>
-                  <div style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '0.2rem' }}>
-                    {e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}
-                    {e.description ? ' · ' + e.description : ''}
+                  <div style={{ fontWeight:600 }}>{e.title}</div>
+                  <div style={{ color:'#aaa', fontSize:'0.85rem' }}>
+                    {e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : ''}
                   </div>
                 </div>
                 <button onClick={() => deleteEvent(e.id)}
-                  style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem' }}>
+                  style={{ background:'transparent', border:'none', color:'#888', cursor:'pointer', fontSize:'1.1rem' }}>
                   🗑️
                 </button>
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function TasksPage({ token, user, partner, wsEvents }) {
-  const [tasks, setTasks] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", assignedTo: "", dueDate: "", recurring: "none", priority: "medium" });
-  const [filter, setFilter] = useState("all");
+  const [tasks, setTasks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [form, setForm] = React.useState({ title: '', notes: '', assignee: 'me' });
+  const [showForm, setShowForm] = React.useState(false);
 
-  useEffect(() => { api("/tasks", "GET", null, token).then(setTasks).catch(() => {}); }, [token]);
+  React.useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    api('/tasks', 'GET', null, token)
+      .then(data => { setTasks(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(e => { console.error('Tasks load error:', e); setLoading(false); });
+  }, [token]);
 
-  useEffect(() => {
-    if (wsEvents?.type === "TASK_ADDED") setTasks(prev => [...prev, wsEvents.data]);
-    if (wsEvents?.type === "TASK_UPDATED") setTasks(prev => prev.map(t => t.id === wsEvents.data.id ? wsEvents.data : t));
-    if (wsEvents?.type === "TASK_DELETED") setTasks(prev => prev.filter(t => t.id !== wsEvents.data.id));
+  React.useEffect(() => {
+    if (wsEvents?.type === 'new_task') setTasks(prev => [...prev, wsEvents.task]);
+    if (wsEvents?.type === 'update_task') setTasks(prev => prev.map(t => t.id === wsEvents.task?.id ? wsEvents.task : t));
   }, [wsEvents]);
 
-  async function addTask(e) {
-    e.preventDefault();
-    const task = await api("/tasks", "POST", form, token);
-    setTasks(prev => [...prev, task]);
-    setForm({ title: "", assignedTo: "", dueDate: "", recurring: "none", priority: "medium" });
-    setShowForm(false);
+  async function addTask() {
+    if (!form.title.trim()) return;
+    try {
+      const task = await api('/tasks', 'POST', {
+        title: form.title,
+        notes: form.notes,
+        assignee: form.assignee === 'partner' ? (partner?.id || 'partner') : (user?.id || 'me'),
+      }, token);
+      setTasks(prev => [...prev, task]);
+      setForm({ title: '', notes: '', assignee: 'me' });
+      setShowForm(false);
+    } catch (e) { console.error(e); }
   }
 
   async function toggleTask(task) {
-    const updated = await api(`/tasks/${task.id}`, "PUT", { completed: !task.completed }, token);
-    setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+    try {
+      const updated = await api('/tasks/' + task.id, 'PUT', { completed: !task.completed }, token);
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, completed: !t.completed } : t));
+    } catch (e) { console.error(e); }
   }
 
   async function deleteTask(id) {
-    await api(`/tasks/${id}`, "DELETE", null, token);
-    setTasks(prev => prev.filter(t => t.id !== id));
+    try {
+      await api('/tasks/' + id, 'DELETE', null, token);
+      setTasks(prev => prev.filter(t => t.id !== id));
+    } catch (e) { console.error(e); }
   }
 
-  const filtered = tasks.filter(t => {
-    if (filter === "mine") return t.assignedTo === user.id;
-    if (filter === "partner") return t.assignedTo === partner?.id;
-    if (filter === "pending") return !t.completed;
-    if (filter === "done") return t.completed;
-    return true;
-  });
+  const incomplete = tasks.filter(t => !t.completed);
+  const completed = tasks.filter(t => t.completed);
 
-  const priorityColor = { high: "#ff6b6b", medium: "#ffd93d", low: "#6bcb77" };
+  if (loading) return <div className="page"><h2>✅ Tasks</h2><p style={{ color:'#aaa', textAlign:'center', padding:'2rem' }}>Loading tasks…</p></div>;
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h2>✅ Tasks & Chores</h2>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>{icons.plus} Add Task</button>
-      </div>
-
-      <div className="filter-tabs">
-        {["all", "pending", "mine", "partner", "done"].map(f => (
-          <button key={f} className={filter === f ? "active" : ""} onClick={() => setFilter(f)}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
-        ))}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
+        <h2 style={{ margin:0 }}>✅ Tasks</h2>
+        <button className="btn-primary" onClick={() => setShowForm(v => !v)}>
+          {showForm ? 'Cancel' : '+ New Task'}
+        </button>
       </div>
 
       {showForm && (
-        <form className="card form-card" onSubmit={addTask}>
-          <h3>New Task</h3>
-          <input placeholder="Task title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
-          <div className="form-row">
-            <select value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })}>
-              <option value="">Unassigned</option>
-              <option value={user.id}>Me ({user.name})</option>
-              {partner && <option value={partner.id}>{partner.name}</option>}
-            </select>
-            <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
-              <option value="high">High Priority</option>
-              <option value="medium">Medium Priority</option>
-              <option value="low">Low Priority</option>
-            </select>
+        <div className="card" style={{ marginBottom:'1rem' }}>
+          <h3 style={{ marginTop:0 }}>New Task</h3>
+          <div className="form-group">
+            <label>Task Title</label>
+            <input className="input" placeholder="What needs to be done?" value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && addTask()} />
           </div>
-          <div className="form-row">
-            <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} />
-            <select value={form.recurring} onChange={e => setForm({ ...form, recurring: e.target.value })}>
-              <option value="none">No repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
+          <div className="form-group">
+            <label>Additional Notes</label>
+            <textarea className="input" placeholder="Any extra details… (optional)" value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              rows={2} style={{ resize:'vertical' }} />
+          </div>
+          <div className="form-group">
+            <label>Assign to</label>
+            <select className="input" value={form.assignee}
+              onChange={e => setForm(f => ({ ...f, assignee: e.target.value }))}>
+              <option value="me">Me ({user?.name || 'Me'})</option>
+              <option value="partner">{partner?.name || 'My Partner'}</option>
             </select>
           </div>
-          <div className="form-actions">
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="btn-primary">Add Task</button>
-          </div>
-        </form>
+          <button className="btn-primary" onClick={addTask} disabled={!form.title.trim()}>Add Task</button>
+        </div>
       )}
 
-      <div className="list">
-        {filtered.length === 0 && <p className="empty">No tasks here. Add one!</p>}
-        {filtered.map(t => (
-          <div key={t.id} className={`list-item ${t.completed ? "completed" : ""}`}>
-            <button className="check-btn" onClick={() => toggleTask(t)} style={{ borderColor: priorityColor[t.priority] }}>
-              {t.completed ? "✓" : ""}
-            </button>
-            <div className="list-item-content">
-              <strong>{t.title}</strong>
-              <span>
-                {t.assignedTo === user.id ? `Assigned to me` : t.assignedTo === partner?.id ? `Assigned to ${partner.name}` : "Unassigned"}
-                {t.dueDate && ` · Due ${new Date(t.dueDate).toLocaleDateString()}`}
-                {t.recurring !== "none" && ` · Repeats ${t.recurring}`}
-                <span className="priority-dot" style={{ background: priorityColor[t.priority] }}></span>
-              </span>
+      {tasks.length === 0 && !showForm && (
+        <div className="card" style={{ textAlign:'center', padding:'2rem', color:'#888' }}>
+          <p>No tasks yet!</p>
+          <p style={{ fontSize:'0.9rem' }}>Tap <strong>+ New Task</strong> to add something for you or your partner.</p>
+        </div>
+      )}
+
+      {incomplete.length > 0 && (
+        <div>
+          {incomplete.map(task => (
+            <div key={task.id} className="card" style={{ marginBottom:'0.6rem' }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem' }}>
+                <button onClick={() => toggleTask(task)}
+                  style={{ background:'transparent', border:'2px solid #7c4dff', borderRadius:'50%',
+                    width:'24px', height:'24px', cursor:'pointer', flexShrink:0, marginTop:'2px' }} />
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:600 }}>{task.title}</div>
+                  {task.notes && <div style={{ color:'#aaa', fontSize:'0.85rem', marginTop:'0.2rem' }}>{task.notes}</div>}
+                  {task.assignee_name && (
+                    <div style={{ color:'#888', fontSize:'0.8rem', marginTop:'0.2rem' }}>
+                      Assigned to: {task.assignee_name === user?.name ? 'Me' : task.assignee_name}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => deleteTask(task.id)}
+                  style={{ background:'transparent', border:'none', color:'#888', cursor:'pointer', fontSize:'1.1rem', flexShrink:0 }}>
+                  🗑️
+                </button>
+              </div>
             </div>
-            <button className="icon-btn" onClick={() => deleteTask(t.id)}>{icons.trash}</button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {completed.length > 0 && (
+        <div style={{ marginTop:'1rem', opacity:0.55 }}>
+          <h3 style={{ color:'#aaa', fontSize:'0.85rem', marginBottom:'0.5rem', textTransform:'uppercase', letterSpacing:'0.05em' }}>
+            Completed ({completed.length})
+          </h3>
+          {completed.map(task => (
+            <div key={task.id} className="card" style={{ marginBottom:'0.5rem' }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'0.75rem' }}>
+                <button onClick={() => toggleTask(task)}
+                  style={{ background:'#7c4dff', border:'none', borderRadius:'50%',
+                    width:'24px', height:'24px', cursor:'pointer', flexShrink:0, marginTop:'2px',
+                    display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:'0.75rem' }}>
+                  ✓
+                </button>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:600, textDecoration:'line-through', color:'#888' }}>{task.title}</div>
+                  {task.notes && <div style={{ color:'#aaa', fontSize:'0.85rem', marginTop:'0.2rem' }}>{task.notes}</div>}
+                </div>
+                <button onClick={() => deleteTask(task.id)}
+                  style={{ background:'transparent', border:'none', color:'#888', cursor:'pointer', fontSize:'1.1rem', flexShrink:0 }}>
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Goals ────────────────────────────────────────────────────────────────────
 function GoalsPage({ token, wsEvents }) {
   const [goals, setGoals] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -640,6 +721,7 @@ function GoalsPage({ token, wsEvents }) {
 // ─── Messages ─────────────────────────────────────────────────────────────────
 function MessagesPage({ token, user, partner, wsEvents }) {
   const [messages, setMessages] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
   const [text, setText] = React.useState('');
   const [sending, setSending] = React.useState(false);
   const [showLoveNotes, setShowLoveNotes] = React.useState(false);
@@ -657,7 +739,11 @@ function MessagesPage({ token, user, partner, wsEvents }) {
   ];
 
   React.useEffect(() => {
-    api('/messages', 'GET', null, token).then(setMessages).catch(console.error);
+    if (!token) return;
+    setLoading(true);
+    api('/messages', 'GET', null, token)
+      .then(data => { setMessages(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(e => { console.error('Messages load error:', e); setLoading(false); });
   }, [token]);
 
   React.useEffect(() => {
@@ -686,34 +772,43 @@ function MessagesPage({ token, user, partner, wsEvents }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(text); }
   }
 
-  return (
-    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+  if (loading) return (
+    <div className="page">
       <h2>💬 Messages</h2>
-      <div className="card" style={{ flex: 1, overflowY: 'auto', marginBottom: '0.5rem', maxHeight: '55vh' }}>
+      <p style={{ color:'#aaa', textAlign:'center', padding:'2rem' }}>Loading messages…</p>
+    </div>
+  );
+
+  return (
+    <div className="page" style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+      <h2>💬 Messages {partner ? 'with ' + (partner.name || 'your partner') : ''}</h2>
+
+      <div className="card" style={{ flex:1, overflowY:'auto', marginBottom:'0.5rem', maxHeight:'55vh', minHeight:'200px' }}>
         {messages.length === 0 && (
-          <p style={{ color: '#888', textAlign: 'center', padding: '2rem' }}>
-            No messages yet. Say hello! 👋
+          <p style={{ color:'#888', textAlign:'center', padding:'2rem' }}>
+            No messages yet. Send a love note or say hello! 👋
           </p>
         )}
         {messages.map((m, i) => {
           const isMe = m.sender_id === user?.id;
           const isLoveNote = m.type === 'love_note';
           return (
-            <div key={m.id || i} style={{
-              display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start',
-              marginBottom: '0.6rem'
-            }}>
+            <div key={m.id || i} style={{ display:'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', marginBottom:'0.6rem' }}>
               <div style={{
-                maxWidth: '75%', padding: '0.55rem 0.9rem', borderRadius: '18px',
+                maxWidth:'75%', padding:'0.55rem 0.9rem', borderRadius:'18px',
                 background: isLoveNote
                   ? 'linear-gradient(135deg, #e91e63, #ff5722)'
-                  : isMe ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
-                color: 'white', fontSize: isLoveNote ? '1rem' : '0.95rem',
+                  : isMe ? 'var(--primary, #7c4dff)' : 'rgba(255,255,255,0.12)',
+                color:'white',
                 boxShadow: isLoveNote ? '0 2px 12px rgba(233,30,99,0.35)' : 'none',
-                border: isLoveNote ? '1px solid rgba(255,255,255,0.2)' : 'none',
               }}>
-                {isLoveNote && <div style={{ fontSize: '0.7rem', opacity: 0.85, marginBottom: '0.2rem' }}>💌 Love Note</div>}
-                {m.text}
+                {isLoveNote && <div style={{ fontSize:'0.7rem', opacity:0.85, marginBottom:'0.2rem' }}>💌 Love Note</div>}
+                <div style={{ fontSize:'0.95rem' }}>{m.text}</div>
+                {m.created_at && (
+                  <div style={{ fontSize:'0.7rem', opacity:0.6, marginTop:'0.2rem', textAlign: isMe ? 'right' : 'left' }}>
+                    {new Date(m.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -722,14 +817,14 @@ function MessagesPage({ token, user, partner, wsEvents }) {
       </div>
 
       {showLoveNotes && (
-        <div className="card" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
-          <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '0.5rem' }}>Pick a love note to send:</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+        <div className="card" style={{ marginBottom:'0.5rem', padding:'0.75rem' }}>
+          <p style={{ fontSize:'0.85rem', color:'#aaa', marginBottom:'0.5rem' }}>Tap a love note to send it instantly:</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
             {loveNotes.map((note, i) => (
               <button key={i} onClick={() => sendMessage(note, 'love_note')}
-                style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)', color: 'white',
-                  border: 'none', borderRadius: '20px', padding: '0.35rem 0.75rem',
-                  cursor: 'pointer', fontSize: '0.85rem' }}>
+                style={{ background:'linear-gradient(135deg,#e91e63,#ff5722)', color:'white',
+                  border:'none', borderRadius:'20px', padding:'0.35rem 0.75rem',
+                  cursor:'pointer', fontSize:'0.85rem' }}>
                 {note}
               </button>
             ))}
@@ -737,18 +832,18 @@ function MessagesPage({ token, user, partner, wsEvents }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+      <div style={{ display:'flex', gap:'0.5rem', alignItems:'flex-end' }}>
         <button onClick={() => setShowLoveNotes(v => !v)} title="Send a Love Note"
           style={{ background: showLoveNotes ? 'linear-gradient(135deg,#e91e63,#ff5722)' : 'rgba(255,255,255,0.12)',
-            border: 'none', borderRadius: '50%', width: '42px', height: '42px',
-            fontSize: '1.2rem', cursor: 'pointer', flexShrink: 0 }}>
+            border:'none', borderRadius:'50%', width:'42px', height:'42px',
+            fontSize:'1.2rem', cursor:'pointer', flexShrink:0 }}>
           💌
         </button>
         <textarea className="input" value={text} onChange={e => setText(e.target.value)}
           onKeyDown={handleKey} placeholder="Message your partner…" rows={1}
-          style={{ flex: 1, resize: 'none', borderRadius: '20px', padding: '0.55rem 1rem' }} />
+          style={{ flex:1, resize:'none', borderRadius:'20px', padding:'0.55rem 1rem' }} />
         <button className="btn-primary" onClick={() => sendMessage(text)} disabled={sending || !text.trim()}
-          style={{ borderRadius: '50%', width: '42px', height: '42px', padding: 0, flexShrink: 0 }}>
+          style={{ borderRadius:'50%', width:'42px', height:'42px', padding:0, flexShrink:0 }}>
           ➤
         </button>
       </div>
@@ -756,7 +851,7 @@ function MessagesPage({ token, user, partner, wsEvents }) {
   );
 }
 
-function BudgetPage({ token, user, partner, wsEvents }) {
+function BudgetPage({ token, user, partner, wsEvents, currency }) {
   const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", amount: "", category: "food", type: "expense", date: new Date().toISOString().split("T")[0] });
@@ -804,15 +899,15 @@ function BudgetPage({ token, user, partner, wsEvents }) {
       <div className="budget-summary">
         <div className="budget-stat income">
           <span>Income</span>
-          <strong>${totalIncome.toFixed(2)}</strong>
+          <strong>{currencySymbol}{totalIncome.toFixed(2)}</strong>
         </div>
         <div className="budget-stat expenses">
           <span>Expenses</span>
-          <strong>${totalExpenses.toFixed(2)}</strong>
+          <strong>{currencySymbol}{totalExpenses.toFixed(2)}</strong>
         </div>
-        <div className={`budget-stat balance ${balance >= 0 ? "positive" : "negative"}`}>
+        <div className={`budget-stat balance {currencySymbol}{balance >= 0 ? "positive" : "negative"}`}>
           <span>Balance</span>
-          <strong>{balance >= 0 ? "+" : ""}${balance.toFixed(2)}</strong>
+          <strong>{balance >= 0 ? "+" : ""}{currencySymbol}{balance.toFixed(2)}</strong>
         </div>
       </div>
 
@@ -825,7 +920,7 @@ function BudgetPage({ token, user, partner, wsEvents }) {
               <div className="category-bar-wrap">
                 <div className="category-bar" style={{ width: `${Math.min(100, (amt / totalExpenses) * 100)}%` }}></div>
               </div>
-              <span>${amt.toFixed(2)}</span>
+              <span>{currencySymbol}{amt.toFixed(2)}</span>
             </div>
           ))}
         </div>
@@ -925,7 +1020,8 @@ function MotivationPage({ token, partner }) {
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 
 // —— Settings Page ——————————————————————————————————————————
-function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
+function SettingsPage({ token, user, partner, onLogout, onDisconnect, currency, onCurrencyChange }) {
+  const currencySymbol = currency === 'ILS' ? '₪' : '$';
   const [profile, setProfile] = React.useState({
     name: user?.name || '',
     loveLanguage: user?.loveLanguage || user?.love_language || 'words-of-affirmation',
@@ -936,6 +1032,7 @@ function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
   const [notifEnabled, setNotifEnabled] = React.useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
   );
+  const [notifLoading, setNotifLoading] = React.useState(false);
   const [disconnecting, setDisconnecting] = React.useState(false);
 
   const loveLanguages = [
@@ -959,20 +1056,58 @@ function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
   }
 
   function copyInviteCode() {
-    navigator.clipboard?.writeText(inviteCode).then(() => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(inviteCode).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    } else {
+      // fallback
+      const el = document.createElement('textarea');
+      el.value = inviteCode;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }
   }
 
-  async function requestNotifications() {
-    if (typeof Notification === 'undefined') return alert('Notifications not supported on this device.');
+  async function toggleNotifications() {
+    if (typeof Notification === 'undefined') {
+      alert('Push notifications are not supported on this device or browser.');
+      return;
+    }
+    if (notifEnabled) {
+      // Can't programmatically disable — instruct user
+      alert('To turn off notifications, go to your browser/device Settings and block notifications for this site.');
+      return;
+    }
+    setNotifLoading(true);
     const perm = await Notification.requestPermission();
-    setNotifEnabled(perm === 'granted');
+    if (perm === 'granted') {
+      setNotifEnabled(true);
+      // Register push subscription
+      try {
+        const reg = await navigator.serviceWorker?.ready;
+        const vapidData = await api('/push/vapid-key', 'GET', null, token);
+        if (reg && vapidData?.publicKey) {
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidData.publicKey),
+          });
+          await api('/push/subscribe', 'POST', sub, token);
+        }
+      } catch (e) { console.error('Push subscribe error:', e); }
+    } else {
+      alert('Notification permission denied. Please allow notifications in your browser settings.');
+    }
+    setNotifLoading(false);
   }
 
   async function handleDisconnect() {
-    if (!window.confirm('Are you sure you want to disconnect from your partner? You can reconnect anytime using your invite code.')) return;
+    if (!window.confirm('Disconnect from your partner? You can reconnect anytime using your invite code.')) return;
     setDisconnecting(true);
     try {
       await api('/couple/disconnect', 'POST', {}, token);
@@ -995,7 +1130,7 @@ function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
         <div className="form-group">
           <label>Email</label>
           <input className="input" type="email" value={user?.email || ''} readOnly
-            style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+            style={{ opacity:0.6, cursor:'not-allowed' }} />
         </div>
         <div className="form-group">
           <label>💕 My Love Language</label>
@@ -1013,72 +1148,95 @@ function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
         <h3>💑 Partner</h3>
         {partner ? (
           <>
-            <p><strong>{partner.name || 'Your Partner'}</strong></p>
-            <p style={{ color: '#888', fontSize: '0.9rem' }}>{partner.email || ''}</p>
-            {partner.loveLanguage || partner.love_language ? (
-              <p style={{ marginTop: '0.4rem' }}>
+            <p style={{ fontWeight:600, marginBottom:'0.2rem' }}>{partner.name || 'Your Partner'}</p>
+            <p style={{ color:'#888', fontSize:'0.9rem', marginBottom:'0.4rem' }}>{partner.email || ''}</p>
+            {(partner.loveLanguage || partner.love_language) && (
+              <p style={{ color:'#aaa', fontSize:'0.9rem' }}>
                 Love language: <em>{(partner.loveLanguage || partner.love_language || '').replace(/-/g, ' ')}</em>
               </p>
-            ) : null}
+            )}
           </>
         ) : (
-          <p style={{ color: '#888' }}>Not connected yet. Share your invite code below.</p>
+          <p style={{ color:'#888' }}>Not connected yet. Share your invite code below to connect with your spouse.</p>
         )}
       </div>
 
       <div className="card">
         <h3>🔗 Invite Code</h3>
-        <p style={{ color: '#888', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-          Share this code with your spouse to connect. Keep it handy — you can use it to reconnect anytime.
+        <p style={{ color:'#888', fontSize:'0.9rem', marginBottom:'0.75rem' }}>
+          Share this code with your spouse to connect. Keep it — you can use it to reconnect anytime if the connection drops.
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: 'monospace', fontSize: '1.4rem', fontWeight: 700,
-            background: 'rgba(255,255,255,0.08)', padding: '0.4rem 0.9rem', borderRadius: '8px',
-            letterSpacing: '0.15em' }}>{inviteCode}</span>
-          <button className="btn-primary" onClick={copyInviteCode} style={{ padding: '0.4rem 0.9rem' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
+          <span style={{ fontFamily:'monospace', fontSize:'1.5rem', fontWeight:700,
+            background:'rgba(255,255,255,0.08)', padding:'0.4rem 1rem', borderRadius:'8px',
+            letterSpacing:'0.15em' }}>{inviteCode}</span>
+          <button className="btn-primary" onClick={copyInviteCode} style={{ padding:'0.4rem 0.9rem' }}>
             {copied ? '✅ Copied!' : '📋 Copy'}
           </button>
         </div>
       </div>
 
       <div className="card">
-        <h3>🔔 Notifications</h3>
-        {notifEnabled ? (
-          <p style={{ color: '#4caf50' }}>✅ Push notifications are enabled</p>
-        ) : (
-          <>
-            <p style={{ marginBottom: '0.75rem', color: '#aaa', fontSize: '0.95rem' }}>
-              Get notified when your partner sends a message, completes a task, or adds a calendar event.
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div>
+            <h3 style={{ margin:0, marginBottom:'0.25rem' }}>🔔 Notifications</h3>
+            <p style={{ color:'#888', fontSize:'0.85rem', margin:0 }}>
+              {notifEnabled ? 'You will be notified of messages, tasks, and events from your partner.' : 'Enable to get notified when your partner sends a message or adds an event.'}
             </p>
-            <button className="btn-primary" onClick={requestNotifications}>Enable Notifications</button>
-          </>
-        )}
+          </div>
+          <button onClick={toggleNotifications} disabled={notifLoading}
+            style={{
+              flexShrink:0, marginLeft:'1rem',
+              width:'52px', height:'28px', borderRadius:'14px', border:'none', cursor:'pointer',
+              background: notifEnabled ? '#7c4dff' : '#444',
+              position:'relative', transition:'background 0.2s',
+            }}>
+            <span style={{
+              position:'absolute', top:'3px',
+              left: notifEnabled ? '26px' : '3px',
+              width:'22px', height:'22px', borderRadius:'50%',
+              background:'white', transition:'left 0.2s',
+              display:'block',
+            }} />
+          </button>
+        </div>
       </div>
 
       <div className="card">
-        <h3>🔗 Partner Connection</h3>
+        <h3>💰 Currency</h3>
+        <p style={{ color:'#888', fontSize:'0.9rem', marginBottom:'0.75rem' }}>Choose the currency shown in your Budget.</p>
+        <select className="input" value={currency || 'USD'}
+          onChange={e => onCurrencyChange && onCurrencyChange(e.target.value)}
+          style={{ maxWidth:'220px' }}>
+          <option value="USD">🇺🇸 US Dollar ($)</option>
+          <option value="ILS">🇮🇱 Israeli Shekel (₪)</option>
+        </select>
+      </div>
+
+      <div className="card">
+        <h3>🔌 Partner Connection</h3>
         {partner ? (
           <>
-            <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-              Connected with {partner.name || 'your partner'}. If something goes wrong, you can disconnect and reconnect using your invite code.
+            <p style={{ color:'#aaa', fontSize:'0.9rem', marginBottom:'0.75rem' }}>
+              Connected with {partner.name || 'your partner'}. If something goes wrong, disconnect and reconnect using your invite code.
             </p>
             <button onClick={handleDisconnect} disabled={disconnecting}
-              style={{ background: '#e53935', color: 'white', border: 'none', borderRadius: '8px',
-                padding: '0.5rem 1.2rem', cursor: 'pointer', opacity: disconnecting ? 0.6 : 1 }}>
+              style={{ background:'#c62828', color:'white', border:'none', borderRadius:'8px',
+                padding:'0.5rem 1.2rem', cursor:'pointer', opacity: disconnecting ? 0.6 : 1 }}>
               {disconnecting ? 'Disconnecting…' : '🔌 Disconnect from Partner'}
             </button>
           </>
         ) : (
-          <p style={{ color: '#888' }}>No partner connected. Enter your partner's invite code on the pairing screen.</p>
+          <p style={{ color:'#888' }}>No partner connected. Share your invite code above.</p>
         )}
       </div>
 
       <div className="card">
         <h3>🚪 Account</h3>
-        <p style={{ color: '#888', fontSize: '0.9rem', marginBottom: '0.75rem' }}>Signed in as {user?.email || ''}</p>
+        <p style={{ color:'#888', fontSize:'0.9rem', marginBottom:'0.75rem' }}>Signed in as {user?.email || ''}</p>
         <button onClick={onLogout}
-          style={{ background: '#555', color: 'white', border: 'none', borderRadius: '8px',
-            padding: '0.5rem 1.2rem', cursor: 'pointer' }}>
+          style={{ background:'#555', color:'white', border:'none', borderRadius:'8px',
+            padding:'0.5rem 1.2rem', cursor:'pointer' }}>
           Log Out
         </button>
       </div>
@@ -1143,6 +1301,11 @@ export default function App() {
   const [streak, setStreak] = useState(null);
   const [wsEvent, setWsEvent] = useState(null);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("theme") === "dark");
+  const [currency, setCurrency] = React.useState(() => localStorage.getItem('couplesync_currency') || 'USD');
+  function handleCurrencyChange(val) {
+    setCurrency(val);
+    localStorage.setItem('couplesync_currency', val);
+  }
   const [notifStatus, setNotifStatus] = useState(() => Notification?.permission || "default");
   const [toast, setToast] = useState(null);
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -1272,8 +1435,8 @@ export default function App() {
         {page === "goals" && <GoalsPage token={auth.token} wsEvents={wsEvent} />}
         {page === "messages" && <MessagesPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
         {page === "motivation" && <MotivationPage token={auth.token} partner={auth.partner} />}
-        {page === "budget" && <BudgetPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
-        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} onDisconnect={() => { logout(); }} />}
+        {page === "budget" && <BudgetPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} currency={currency} />}
+        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} onDisconnect={() => { logout(); }} currency={currency} onCurrencyChange={handleCurrencyChange} />}
       </main>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
