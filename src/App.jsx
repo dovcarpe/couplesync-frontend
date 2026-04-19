@@ -210,102 +210,231 @@ function Dashboard({ user, partner, token, streak }) {
 }
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
-function CalendarPage({ token, wsEvents }) {
-  const [events, setEvents] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", date: "", time: "", notes: "", recurring: "none" });
+function CalendarPage({ token, user, wsEvents }) {
+  const [events, setEvents] = React.useState([]);
+  const [form, setForm] = React.useState({ title: '', date: '', description: '', type: 'event' });
+  const [showForm, setShowForm] = React.useState(false);
+  const [showDateNightPicker, setShowDateNightPicker] = React.useState(false);
+  const [dateNightDate, setDateNightDate] = React.useState('');
+  const [dateNightIdea, setDateNightIdea] = React.useState('');
+  const [gcConnected, setGcConnected] = React.useState(false);
+  const [gcSyncing, setGcSyncing] = React.useState(false);
 
-  useEffect(() => { api("/events", "GET", null, token).then(setEvents).catch(() => {}); }, [token]);
+  const dateNightIdeas = [
+    '🍷 Dinner & a movie at home',
+    '🌮 Try a new restaurant',
+    '🎳 Bowling night',
+    '🌅 Sunrise hike together',
+    '🎭 See a live show',
+    '🍦 Ice cream & a walk',
+    '🎲 Game night & takeout',
+    '💆 Spa night at home',
+    '🚗 Scenic drive & music',
+    '🎨 Paint night together',
+  ];
 
-  useEffect(() => {
-    if (wsEvents?.type === "EVENT_ADDED") setEvents(prev => [...prev, wsEvents.data]);
-    if (wsEvents?.type === "EVENT_UPDATED") setEvents(prev => prev.map(e => e.id === wsEvents.data.id ? wsEvents.data : e));
-    if (wsEvents?.type === "EVENT_DELETED") setEvents(prev => prev.filter(e => e.id !== wsEvents.data.id));
+  React.useEffect(() => {
+    api('/events', 'GET', null, token).then(setEvents).catch(console.error);
+    // Check if Google Calendar is connected
+    api('/calendar/status', 'GET', null, token)
+      .then(d => setGcConnected(!!d?.connected))
+      .catch(() => {});
+  }, [token]);
+
+  React.useEffect(() => {
+    if (wsEvents?.type === 'new_event') {
+      setEvents(prev => [...prev, wsEvents.event]);
+    }
   }, [wsEvents]);
 
-  async function addEvent(e) {
-    e.preventDefault();
-    const event = await api("/events", "POST", form, token);
-    setEvents(prev => [...prev, event]);
-    setForm({ title: "", date: "", time: "", notes: "", recurring: "none" });
-    setShowForm(false);
+  async function addEvent() {
+    if (!form.title || !form.date) return;
+    try {
+      const ev = await api('/events', 'POST', form, token);
+      setEvents(prev => [...prev, ev]);
+      setForm({ title: '', date: '', description: '', type: 'event' });
+      setShowForm(false);
+    } catch (e) { console.error(e); }
   }
 
   async function deleteEvent(id) {
-    await api(`/events/${id}`, "DELETE", null, token);
-    setEvents(prev => prev.filter(e => e.id !== id));
+    try {
+      await api('/events/' + id, 'DELETE', null, token);
+      setEvents(prev => prev.filter(e => e.id !== id));
+    } catch (e) { console.error(e); }
   }
 
-  const upcoming = events.filter(e => new Date(e.date) >= new Date()).sort((a, b) => new Date(a.date) - new Date(b.date));
-  const past = events.filter(e => new Date(e.date) < new Date()).sort((a, b) => new Date(b.date) - new Date(a.date));
+  async function proposeDateNight() {
+    if (!dateNightDate) return;
+    const title = '💕 Date Night' + (dateNightIdea ? ': ' + dateNightIdea.replace(/^[^a-zA-Z]+/, '') : '');
+    try {
+      const ev = await api('/events', 'POST', {
+        title, date: dateNightDate, description: dateNightIdea, type: 'date_night'
+      }, token);
+      setEvents(prev => [...prev, ev]);
+      setShowDateNightPicker(false);
+      setDateNightDate('');
+      setDateNightIdea('');
+    } catch (e) { console.error(e); }
+  }
+
+  async function connectGoogleCalendar() {
+    try {
+      const d = await api('/calendar/auth-url', 'GET', null, token);
+      if (d?.url) window.open(d.url, '_blank');
+    } catch (e) { alert('Google Calendar connection coming soon! Add your Google Client ID to the backend.'); }
+  }
+
+  async function syncGoogleCalendar() {
+    setGcSyncing(true);
+    try {
+      const d = await api('/calendar/sync', 'POST', {}, token);
+      if (d?.events) setEvents(prev => {
+        const ids = new Set(prev.map(e => e.id));
+        return [...prev, ...d.events.filter(e => !ids.has(e.id))];
+      });
+    } catch (e) { console.error(e); }
+    setGcSyncing(false);
+  }
+
+  const sorted = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h2>📅 Calendar</h2>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>{icons.plus} Add Event</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0 }}>📅 Calendar</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button className="btn-primary" onClick={() => { setShowDateNightPicker(true); setShowForm(false); }}
+            style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)', fontSize: '0.9rem' }}>
+            💕 Date Night
+          </button>
+          <button className="btn-primary" onClick={() => { setShowForm(v => !v); setShowDateNightPicker(false); }}
+            style={{ fontSize: '0.9rem' }}>
+            + Add Event
+          </button>
+        </div>
       </div>
+
+      {showDateNightPicker && (
+        <div className="card" style={{ border: '1px solid rgba(233,30,99,0.4)', marginBottom: '1rem' }}>
+          <h3 style={{ color: '#e91e63', marginTop: 0 }}>💕 Plan a Date Night</h3>
+          <div className="form-group">
+            <label>Date</label>
+            <input className="input" type="date" value={dateNightDate}
+              onChange={e => setDateNightDate(e.target.value)} min={today} />
+          </div>
+          <div className="form-group">
+            <label>Pick an idea (optional)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+              {dateNightIdeas.map((idea, i) => (
+                <button key={i} onClick={() => setDateNightIdea(idea)}
+                  style={{ background: dateNightIdea === idea ? 'linear-gradient(135deg,#e91e63,#ff5722)' : 'rgba(255,255,255,0.1)',
+                    color: 'white', border: 'none', borderRadius: '20px', padding: '0.3rem 0.7rem',
+                    cursor: 'pointer', fontSize: '0.82rem' }}>
+                  {idea}
+                </button>
+              ))}
+            </div>
+            <input className="input" placeholder="Or type your own idea…" value={dateNightIdea}
+              onChange={e => setDateNightIdea(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn-primary" onClick={proposeDateNight} disabled={!dateNightDate}
+              style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)' }}>
+              💕 Add to Calendar
+            </button>
+            <button onClick={() => setShowDateNightPicker(false)}
+              style={{ background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', padding: '0.4rem 0.9rem', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
-        <form className="card form-card" onSubmit={addEvent}>
-          <h3>New Event</h3>
-          <input placeholder="Event title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
-          <div className="form-row">
-            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required />
-            <input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} />
+        <div className="card" style={{ marginBottom: '1rem' }}>
+          <h3 style={{ marginTop: 0 }}>New Event</h3>
+          <div className="form-group">
+            <label>Title</label>
+            <input className="input" placeholder="Event title" value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
           </div>
-          <select value={form.recurring} onChange={e => setForm({ ...form, recurring: e.target.value })}>
-            <option value="none">No repeat</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
-          </select>
-          <textarea placeholder="Notes (optional)" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
-          <div className="form-actions">
-            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="btn-primary">Save Event</button>
+          <div className="form-group">
+            <label>Date</label>
+            <input className="input" type="date" value={form.date}
+              onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
           </div>
-        </form>
+          <div className="form-group">
+            <label>Notes (optional)</label>
+            <input className="input" placeholder="Any details…" value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn-primary" onClick={addEvent}>Add Event</button>
+            <button onClick={() => setShowForm(false)}
+              style={{ background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', padding: '0.4rem 0.9rem', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
-      <h3>Upcoming</h3>
-      {upcoming.length === 0 && <p className="empty">No upcoming events. Add one!</p>}
-      <div className="list">
-        {upcoming.map(e => (
-          <div key={e.id} className="list-item">
-            <div className="list-item-icon">📅</div>
-            <div className="list-item-content">
-              <strong>{e.title}</strong>
-              <span>{new Date(e.date).toLocaleDateString()} {e.time && `at ${e.time}`} {e.recurring !== "none" && `· Repeats ${e.recurring}`}</span>
-              {e.notes && <span className="notes">{e.notes}</span>}
-            </div>
-            <button className="icon-btn" onClick={() => deleteEvent(e.id)}>{icons.trash}</button>
-          </div>
-        ))}
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>🗓️ Google Calendar</h3>
+          {gcConnected ? (
+            <button className="btn-primary" onClick={syncGoogleCalendar} disabled={gcSyncing}
+              style={{ fontSize: '0.85rem', padding: '0.3rem 0.7rem' }}>
+              {gcSyncing ? 'Syncing…' : '🔄 Sync Now'}
+            </button>
+          ) : (
+            <button onClick={connectGoogleCalendar}
+              style={{ background: 'white', color: '#444', border: 'none', borderRadius: '8px',
+                padding: '0.35rem 0.8rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
+              🔗 Connect Google
+            </button>
+          )}
+        </div>
+        <p style={{ color: '#888', fontSize: '0.85rem', margin: '0.4rem 0 0' }}>
+          {gcConnected ? 'Your Google Calendar is connected. Events sync both ways.' : 'Connect to sync your Google Calendar events here.'}
+        </p>
       </div>
 
-      {past.length > 0 && (
-        <>
-          <h3>Past</h3>
-          <div className="list faded">
-            {past.slice(0, 5).map(e => (
-              <div key={e.id} className="list-item">
-                <div className="list-item-icon">📅</div>
-                <div className="list-item-content">
-                  <strong>{e.title}</strong>
-                  <span>{new Date(e.date).toLocaleDateString()}</span>
+      <div>
+        {sorted.length === 0 && (
+          <p style={{ color: '#888', textAlign: 'center', padding: '2rem' }}>No events yet. Add one above!</p>
+        )}
+        {sorted.map(e => {
+          const isDateNight = e.type === 'date_night';
+          const isPast = e.date && e.date < today;
+          return (
+            <div key={e.id} className="card" style={{
+              marginBottom: '0.6rem', opacity: isPast ? 0.6 : 1,
+              border: isDateNight ? '1px solid rgba(233,30,99,0.4)' : 'none',
+              background: isDateNight ? 'linear-gradient(135deg,rgba(233,30,99,0.08),rgba(255,87,34,0.08))' : undefined,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{isDateNight ? '💕 ' : ''}{e.title}</div>
+                  <div style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                    {e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}
+                    {e.description ? ' · ' + e.description : ''}
+                  </div>
                 </div>
-                <button className="icon-btn" onClick={() => deleteEvent(e.id)}>{icons.trash}</button>
+                <button onClick={() => deleteEvent(e.id)}
+                  style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem' }}>
+                  🗑️
+                </button>
               </div>
-            ))}
-          </div>
-        </>
-      )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-// ─── Tasks ────────────────────────────────────────────────────────────────────
 function TasksPage({ token, user, partner, wsEvents }) {
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -510,80 +639,123 @@ function GoalsPage({ token, wsEvents }) {
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 function MessagesPage({ token, user, partner, wsEvents }) {
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const [type, setType] = useState("text");
-  const bottomRef = useRef(null);
+  const [messages, setMessages] = React.useState([]);
+  const [text, setText] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [showLoveNotes, setShowLoveNotes] = React.useState(false);
+  const bottomRef = React.useRef(null);
 
-  useEffect(() => {
-    api("/messages", "GET", null, token).then(setMessages).catch(() => {});
-  }, [token]);
-
-  useEffect(() => {
-    if (wsEvents?.type === "MESSAGE_ADDED") setMessages(prev => [...prev, wsEvents.data]);
-  }, [wsEvents]);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  async function sendMessage(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
-    const msg = await api("/messages", "POST", { text, type }, token);
-    setMessages(prev => [...prev, msg]);
-    setText("");
-  }
-
-  const quickMessages = [
-    "Thinking of you 💭", "Love you! ❤️", "Miss you 🥺",
-    "You're amazing ✨", "Can't wait to see you 🤗", "Good morning! ☀️"
+  const loveNotes = [
+    '💌 Thinking of you right now ❤️',
+    '🌟 You make every day better',
+    '☕ Hope your day is as wonderful as you are',
+    '🌙 Can\'t wait to see you tonight',
+    '💪 I\'m so proud of you',
+    '🌸 You are my favorite person',
+    '🔥 Still falling for you every day',
+    '🤗 Sending you a big hug right now',
   ];
 
+  React.useEffect(() => {
+    api('/messages', 'GET', null, token).then(setMessages).catch(console.error);
+  }, [token]);
+
+  React.useEffect(() => {
+    if (wsEvents?.type === 'new_message') {
+      setMessages(prev => [...prev, wsEvents.message]);
+    }
+  }, [wsEvents]);
+
+  React.useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  async function sendMessage(msgText, msgType = 'text') {
+    if (!msgText.trim()) return;
+    setSending(true);
+    setShowLoveNotes(false);
+    try {
+      const msg = await api('/messages', 'POST', { text: msgText, type: msgType }, token);
+      setMessages(prev => [...prev, msg]);
+      setText('');
+    } catch (e) { console.error(e); }
+    setSending(false);
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(text); }
+  }
+
   return (
-    <div className="page messages-page">
+    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <h2>💬 Messages</h2>
-
-      <div className="quick-messages">
-        {quickMessages.map(q => (
-          <button key={q} className="quick-msg-btn" onClick={() => setText(q)}>{q}</button>
-        ))}
-      </div>
-
-      <div className="messages-list">
-        {messages.map(m => (
-          <div key={m.id} className={`message ${m.senderId === user.id ? "mine" : m.senderId === "system" ? "system" : "theirs"}`}>
-            {m.senderId === "system"
-              ? <div className="system-msg">{m.text}</div>
-              : (
-                <div className="bubble">
-                  <div className="bubble-text">{m.text}</div>
-                  <div className="bubble-time">{new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                </div>
-              )
-            }
-          </div>
-        ))}
+      <div className="card" style={{ flex: 1, overflowY: 'auto', marginBottom: '0.5rem', maxHeight: '55vh' }}>
+        {messages.length === 0 && (
+          <p style={{ color: '#888', textAlign: 'center', padding: '2rem' }}>
+            No messages yet. Say hello! 👋
+          </p>
+        )}
+        {messages.map((m, i) => {
+          const isMe = m.sender_id === user?.id;
+          const isLoveNote = m.type === 'love_note';
+          return (
+            <div key={m.id || i} style={{
+              display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start',
+              marginBottom: '0.6rem'
+            }}>
+              <div style={{
+                maxWidth: '75%', padding: '0.55rem 0.9rem', borderRadius: '18px',
+                background: isLoveNote
+                  ? 'linear-gradient(135deg, #e91e63, #ff5722)'
+                  : isMe ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                color: 'white', fontSize: isLoveNote ? '1rem' : '0.95rem',
+                boxShadow: isLoveNote ? '0 2px 12px rgba(233,30,99,0.35)' : 'none',
+                border: isLoveNote ? '1px solid rgba(255,255,255,0.2)' : 'none',
+              }}>
+                {isLoveNote && <div style={{ fontSize: '0.7rem', opacity: 0.85, marginBottom: '0.2rem' }}>💌 Love Note</div>}
+                {m.text}
+              </div>
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
-      <form className="message-input" onSubmit={sendMessage}>
-        <select value={type} onChange={e => setType(e.target.value)}>
-          <option value="text">💬 Text</option>
-          <option value="affirmation">💕 Affirmation</option>
-          <option value="gratitude">🙏 Gratitude</option>
-          <option value="encouragement">🌟 Encouragement</option>
-        </select>
-        <input
-          placeholder={`Send a ${type} to ${partner?.name || "your partner"}...`}
-          value={text}
-          onChange={e => setText(e.target.value)}
-        />
-        <button type="submit" className="btn-primary">{icons.send}</button>
-      </form>
+      {showLoveNotes && (
+        <div className="card" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
+          <p style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '0.5rem' }}>Pick a love note to send:</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+            {loveNotes.map((note, i) => (
+              <button key={i} onClick={() => sendMessage(note, 'love_note')}
+                style={{ background: 'linear-gradient(135deg,#e91e63,#ff5722)', color: 'white',
+                  border: 'none', borderRadius: '20px', padding: '0.35rem 0.75rem',
+                  cursor: 'pointer', fontSize: '0.85rem' }}>
+                {note}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+        <button onClick={() => setShowLoveNotes(v => !v)} title="Send a Love Note"
+          style={{ background: showLoveNotes ? 'linear-gradient(135deg,#e91e63,#ff5722)' : 'rgba(255,255,255,0.12)',
+            border: 'none', borderRadius: '50%', width: '42px', height: '42px',
+            fontSize: '1.2rem', cursor: 'pointer', flexShrink: 0 }}>
+          💌
+        </button>
+        <textarea className="input" value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={handleKey} placeholder="Message your partner…" rows={1}
+          style={{ flex: 1, resize: 'none', borderRadius: '20px', padding: '0.55rem 1rem' }} />
+        <button className="btn-primary" onClick={() => sendMessage(text)} disabled={sending || !text.trim()}
+          style={{ borderRadius: '50%', width: '42px', height: '42px', padding: 0, flexShrink: 0 }}>
+          ➤
+        </button>
+      </div>
     </div>
   );
 }
 
-// ─── Budget ───────────────────────────────────────────────────────────────────
 function BudgetPage({ token, user, partner, wsEvents }) {
   const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -753,42 +925,60 @@ function MotivationPage({ token, partner }) {
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 
 // —— Settings Page ——————————————————————————————————————————
-function SettingsPage({ token, user, partner, onLogout }) {
+function SettingsPage({ token, user, partner, onLogout, onDisconnect }) {
   const [profile, setProfile] = React.useState({
-    name: user?.name || "",
-    email: user?.email || "",
-    loveLanguage: user?.loveLanguage || "words-of-affirmation",
+    name: user?.name || '',
+    loveLanguage: user?.loveLanguage || user?.love_language || 'words-of-affirmation',
   });
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
   const [notifEnabled, setNotifEnabled] = React.useState(
-    "Notification" in window && Notification.permission === "granted"
+    typeof Notification !== 'undefined' && Notification.permission === 'granted'
   );
+  const [disconnecting, setDisconnecting] = React.useState(false);
 
   const loveLanguages = [
-    { value: "words-of-affirmation", label: "Words of Affirmation" },
-    { value: "acts-of-service", label: "Acts of Service" },
-    { value: "receiving-gifts", label: "Receiving Gifts" },
-    { value: "quality-time", label: "Quality Time" },
-    { value: "physical-touch", label: "Physical Touch" },
+    { value: 'words-of-affirmation', label: 'Words of Affirmation' },
+    { value: 'acts-of-service', label: 'Acts of Service' },
+    { value: 'receiving-gifts', label: 'Receiving Gifts' },
+    { value: 'quality-time', label: 'Quality Time' },
+    { value: 'physical-touch', label: 'Physical Touch' },
   ];
+
+  const inviteCode = user?.inviteCode || user?.invite_code || '—';
 
   async function saveProfile() {
     setSaving(true);
     try {
-      await api("/profile", "PUT", profile, token);
+      await api('/profile', 'PUT', { name: profile.name, loveLanguage: profile.loveLanguage }, token);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      console.error("Save profile error:", e);
-    }
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) { console.error(e); }
     setSaving(false);
   }
 
+  function copyInviteCode() {
+    navigator.clipboard?.writeText(inviteCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   async function requestNotifications() {
-    if (!("Notification" in window)) return alert("Notifications not supported on this device.");
+    if (typeof Notification === 'undefined') return alert('Notifications not supported on this device.');
     const perm = await Notification.requestPermission();
-    setNotifEnabled(perm === "granted");
+    setNotifEnabled(perm === 'granted');
+  }
+
+  async function handleDisconnect() {
+    if (!window.confirm('Are you sure you want to disconnect from your partner? You can reconnect anytime using your invite code.')) return;
+    setDisconnecting(true);
+    try {
+      await api('/couple/disconnect', 'POST', {}, token);
+      if (onDisconnect) onDisconnect();
+    } catch (e) { console.error(e); }
+    setDisconnecting(false);
   }
 
   return (
@@ -799,69 +989,103 @@ function SettingsPage({ token, user, partner, onLogout }) {
         <h3>👤 Your Profile</h3>
         <div className="form-group">
           <label>Name</label>
-          <input
-            className="input"
-            value={profile.name}
-            onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
-          />
+          <input className="input" value={profile.name}
+            onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} />
         </div>
         <div className="form-group">
           <label>Email</label>
-          <input
-            className="input"
-            type="email"
-            value={profile.email}
-            readOnly
-          />
+          <input className="input" type="email" value={user?.email || ''} readOnly
+            style={{ opacity: 0.6, cursor: 'not-allowed' }} />
         </div>
         <div className="form-group">
-          <label>Love Language</label>
-          <select
-            className="input"
-            value={profile.loveLanguage}
-            onChange={e => setProfile(p => ({ ...p, loveLanguage: e.target.value }))}
-          >
-            {loveLanguages.map(l => (
-              <option key={l.value} value={l.value}>{l.label}</option>
-            ))}
+          <label>💕 My Love Language</label>
+          <select className="input" value={profile.loveLanguage}
+            onChange={e => setProfile(p => ({ ...p, loveLanguage: e.target.value }))}>
+            {loveLanguages.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </div>
         <button className="btn-primary" onClick={saveProfile} disabled={saving}>
-          {saving ? "Saving…" : saved ? "✅ Saved!" : "Save Changes"}
+          {saving ? 'Saving…' : saved ? '✅ Saved!' : 'Save Changes'}
         </button>
       </div>
 
-      {partner && (
-        <div className="card">
-          <h3>💑 Partner</h3>
-          <p><strong>{partner.name}</strong></p>
-          <p style={{ color: "#888", fontSize: "0.9rem" }}>{partner.email}</p>
-          <p>Love language: <em>{partner.loveLanguage?.replace("-", " ") || "not set"}</em></p>
+      <div className="card">
+        <h3>💑 Partner</h3>
+        {partner ? (
+          <>
+            <p><strong>{partner.name || 'Your Partner'}</strong></p>
+            <p style={{ color: '#888', fontSize: '0.9rem' }}>{partner.email || ''}</p>
+            {partner.loveLanguage || partner.love_language ? (
+              <p style={{ marginTop: '0.4rem' }}>
+                Love language: <em>{(partner.loveLanguage || partner.love_language || '').replace(/-/g, ' ')}</em>
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p style={{ color: '#888' }}>Not connected yet. Share your invite code below.</p>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>🔗 Invite Code</h3>
+        <p style={{ color: '#888', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+          Share this code with your spouse to connect. Keep it handy — you can use it to reconnect anytime.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'monospace', fontSize: '1.4rem', fontWeight: 700,
+            background: 'rgba(255,255,255,0.08)', padding: '0.4rem 0.9rem', borderRadius: '8px',
+            letterSpacing: '0.15em' }}>{inviteCode}</span>
+          <button className="btn-primary" onClick={copyInviteCode} style={{ padding: '0.4rem 0.9rem' }}>
+            {copied ? '✅ Copied!' : '📋 Copy'}
+          </button>
         </div>
-      )}
+      </div>
 
       <div className="card">
         <h3>🔔 Notifications</h3>
         {notifEnabled ? (
-          <p style={{ color: "#4caf50" }}>✅ Push notifications are enabled</p>
+          <p style={{ color: '#4caf50' }}>✅ Push notifications are enabled</p>
         ) : (
           <>
-            <p>Enable push notifications to get reminders for tasks, goals, and messages from your partner.</p>
+            <p style={{ marginBottom: '0.75rem', color: '#aaa', fontSize: '0.95rem' }}>
+              Get notified when your partner sends a message, completes a task, or adds a calendar event.
+            </p>
             <button className="btn-primary" onClick={requestNotifications}>Enable Notifications</button>
           </>
         )}
       </div>
 
       <div className="card">
+        <h3>🔗 Partner Connection</h3>
+        {partner ? (
+          <>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+              Connected with {partner.name || 'your partner'}. If something goes wrong, you can disconnect and reconnect using your invite code.
+            </p>
+            <button onClick={handleDisconnect} disabled={disconnecting}
+              style={{ background: '#e53935', color: 'white', border: 'none', borderRadius: '8px',
+                padding: '0.5rem 1.2rem', cursor: 'pointer', opacity: disconnecting ? 0.6 : 1 }}>
+              {disconnecting ? 'Disconnecting…' : '🔌 Disconnect from Partner'}
+            </button>
+          </>
+        ) : (
+          <p style={{ color: '#888' }}>No partner connected. Enter your partner's invite code on the pairing screen.</p>
+        )}
+      </div>
+
+      <div className="card">
         <h3>🚪 Account</h3>
-        <p style={{ color: "#888", fontSize: "0.9rem" }}>Signed in as {user?.email}</p>
-        <button className="btn-danger" style={{ marginTop: "0.5rem", background: "#e53935", color: "white", border: "none", borderRadius: "8px", padding: "0.5rem 1.2rem", cursor: "pointer" }} onClick={onLogout}>
+        <p style={{ color: '#888', fontSize: '0.9rem', marginBottom: '0.75rem' }}>Signed in as {user?.email || ''}</p>
+        <button onClick={onLogout}
+          style={{ background: '#555', color: 'white', border: 'none', borderRadius: '8px',
+            padding: '0.5rem 1.2rem', cursor: 'pointer' }}>
           Log Out
         </button>
       </div>
     </div>
   );
 }
+
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -1043,13 +1267,13 @@ export default function App() {
 
       <main className="main-content">
         {page === "dashboard" && <Dashboard user={auth.user} partner={auth.partner} token={auth.token} streak={streak} />}
-        {page === "calendar" && <CalendarPage token={auth.token} wsEvents={wsEvent} />}
+        {page === "calendar" && <CalendarPage token={auth.token} user={auth.user} wsEvents={wsEvent} />}
         {page === "tasks" && <TasksPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
         {page === "goals" && <GoalsPage token={auth.token} wsEvents={wsEvent} />}
         {page === "messages" && <MessagesPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
         {page === "motivation" && <MotivationPage token={auth.token} partner={auth.partner} />}
         {page === "budget" && <BudgetPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
-        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} />}
+        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} onDisconnect={() => { logout(); }} />}
       </main>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
