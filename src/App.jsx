@@ -211,16 +211,16 @@ function Dashboard({ user, partner, token, streak }) {
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 function CalendarPage({ token, user, wsEvents }) {
-  const [events, setEvents] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState('');
-  const [form, setForm] = React.useState({ title: '', date: '', description: '', type: 'event' });
-  const [showForm, setShowForm] = React.useState(false);
-  const [showDateNightPicker, setShowDateNightPicker] = React.useState(false);
-  const [dateNightDate, setDateNightDate] = React.useState('');
-  const [dateNightIdea, setDateNightIdea] = React.useState('');
-  const [gcConnected, setGcConnected] = React.useState(false);
-  const [gcSyncing, setGcSyncing] = React.useState(false);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ title: '', date: '', description: '', type: 'event' });
+  const [showForm, setShowForm] = useState(false);
+  const [showDateNightPicker, setShowDateNightPicker] = useState(false);
+  const [dateNightDate, setDateNightDate] = useState('');
+  const [dateNightIdea, setDateNightIdea] = useState('');
+  const [gcConnected, setGcConnected] = useState(false);
+  const [gcSyncing, setGcSyncing] = useState(false);
 
   const dateNightIdeas = [
     '🍷 Dinner & a movie at home',
@@ -235,7 +235,7 @@ function CalendarPage({ token, user, wsEvents }) {
     '🎨 Paint night together',
   ];
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!token) return;
     setLoading(true);
     api('/events', 'GET', null, token)
@@ -246,7 +246,7 @@ function CalendarPage({ token, user, wsEvents }) {
       .catch(() => {});
   }, [token]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (wsEvents?.type === 'new_event') {
       setEvents(prev => [...prev, wsEvents.event]);
     }
@@ -287,8 +287,16 @@ function CalendarPage({ token, user, wsEvents }) {
     try {
       const d = await api('/calendar/auth-url', 'GET', null, token);
       if (d?.url) window.open(d.url, '_blank');
-      else alert('Google Calendar: Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your Railway environment variables first.');
-    } catch (e) { alert('Google Calendar not configured yet. Add your Google API keys to Railway.'); }
+      else alert('Could not get Google Calendar URL. Check Railway logs.');
+    } catch (e) {
+      // Try to get the error detail
+      const msg = e?.message || '';
+      if (msg.includes('503') || msg.includes('not configured')) {
+        alert('Google Calendar keys not found on the server. Make sure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Railway → Variables, then redeploy.');
+      } else {
+        alert('Error connecting Google Calendar: ' + msg);
+      }
+    }
   }
 
   async function syncGoogleCalendar() {
@@ -476,12 +484,12 @@ function CalendarPage({ token, user, wsEvents }) {
 }
 
 function TasksPage({ token, user, partner, wsEvents }) {
-  const [tasks, setTasks] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [form, setForm] = React.useState({ title: '', notes: '', assignee: 'me' });
-  const [showForm, setShowForm] = React.useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ title: '', notes: '', assignee: 'me' });
+  const [showForm, setShowForm] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!token) return;
     setLoading(true);
     api('/tasks', 'GET', null, token)
@@ -489,7 +497,7 @@ function TasksPage({ token, user, partner, wsEvents }) {
       .catch(e => { console.error('Tasks load error:', e); setLoading(false); });
   }, [token]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (wsEvents?.type === 'new_task') setTasks(prev => [...prev, wsEvents.task]);
     if (wsEvents?.type === 'update_task') setTasks(prev => prev.map(t => t.id === wsEvents.task?.id ? wsEvents.task : t));
   }, [wsEvents]);
@@ -720,12 +728,12 @@ function GoalsPage({ token, wsEvents }) {
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 function MessagesPage({ token, user, partner, wsEvents }) {
-  const [messages, setMessages] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [text, setText] = React.useState('');
-  const [sending, setSending] = React.useState(false);
-  const [showLoveNotes, setShowLoveNotes] = React.useState(false);
-  const bottomRef = React.useRef(null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showLoveNotes, setShowLoveNotes] = useState(false);
+  const bottomRef = useRef(null);
 
   const loveNotes = [
     '💌 Thinking of you right now ❤️',
@@ -738,7 +746,7 @@ function MessagesPage({ token, user, partner, wsEvents }) {
     '🤗 Sending you a big hug right now',
   ];
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!token) return;
     setLoading(true);
     api('/messages', 'GET', null, token)
@@ -746,13 +754,13 @@ function MessagesPage({ token, user, partner, wsEvents }) {
       .catch(e => { console.error('Messages load error:', e); setLoading(false); });
   }, [token]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (wsEvents?.type === 'new_message') {
       setMessages(prev => [...prev, wsEvents.message]);
     }
   }, [wsEvents]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -852,6 +860,7 @@ function MessagesPage({ token, user, partner, wsEvents }) {
 }
 
 function BudgetPage({ token, user, partner, wsEvents, currency }) {
+  const currencySymbol = currency === 'ILS' ? '₪' : '$';
   const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", amount: "", category: "food", type: "expense", date: new Date().toISOString().split("T")[0] });
@@ -1022,18 +1031,18 @@ const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 // —— Settings Page ——————————————————————————————————————————
 function SettingsPage({ token, user, partner, onLogout, onDisconnect, currency, onCurrencyChange }) {
   const currencySymbol = currency === 'ILS' ? '₪' : '$';
-  const [profile, setProfile] = React.useState({
+  const [profile, setProfile] = useState({
     name: user?.name || '',
     loveLanguage: user?.loveLanguage || user?.love_language || 'words-of-affirmation',
   });
-  const [saving, setSaving] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
-  const [notifEnabled, setNotifEnabled] = React.useState(
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
   );
-  const [notifLoading, setNotifLoading] = React.useState(false);
-  const [disconnecting, setDisconnecting] = React.useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const loveLanguages = [
     { value: 'words-of-affirmation', label: 'Words of Affirmation' },
@@ -1301,7 +1310,7 @@ export default function App() {
   const [streak, setStreak] = useState(null);
   const [wsEvent, setWsEvent] = useState(null);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("theme") === "dark");
-  const [currency, setCurrency] = React.useState(() => localStorage.getItem('couplesync_currency') || 'USD');
+  const [currency, setCurrency] = useState(() => localStorage.getItem('couplesync_currency') || 'USD');
   function handleCurrencyChange(val) {
     setCurrency(val);
     localStorage.setItem('couplesync_currency', val);
@@ -1436,7 +1445,7 @@ export default function App() {
         {page === "messages" && <MessagesPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} />}
         {page === "motivation" && <MotivationPage token={auth.token} partner={auth.partner} />}
         {page === "budget" && <BudgetPage token={auth.token} user={auth.user} partner={auth.partner} wsEvents={wsEvent} currency={currency} />}
-        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={logout} onDisconnect={() => { logout(); }} currency={currency} onCurrencyChange={handleCurrencyChange} />}
+        {page === "settings" && <SettingsPage token={auth.token} user={auth.user} partner={partner} onLogout={handleLogout} onDisconnect={() => { handleLogout(); }} currency={currency} onCurrencyChange={handleCurrencyChange} />}
       </main>
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
